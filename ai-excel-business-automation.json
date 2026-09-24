@@ -1,0 +1,704 @@
+{
+  "name": "AI Excel Business Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "701d23de-03ce-4990-a776-929a9e2ed691",
+      "name": "When chat message received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        -23648,
+        -20032
+      ],
+      "webhookId": "f1318134-f5f3-4c78-aff0-bfe2f06e10c0"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "AI Excel Business Automation",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1372186642,
+          "mode": "list",
+          "cachedResultName": "Sales_Data",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit#gid=1372186642"
+        },
+        "options": {}
+      },
+      "id": "041a8d62-00d2-4ade-ac76-742166daac79",
+      "name": "Get row(s) in sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -23392,
+        -20192
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "QimWF6zFG78lRwN9",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "8b60b99e-05cc-4fa6-a684-edf2f8c6c3f2",
+      "name": "Aggregate",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        -23184,
+        -20016
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const record = $input.first().json;\nconst rows = record.data;\n\nconst validated = rows.map(row => {\n  const issues = [];\n  let revenue = row.Revenue;\n  let cost = row.Cost;\n  let profit = row.Profit;\n  let units = row['Units Sold'];\n  let customers = row['Customer Count'];\n  let date = row.Date;\n\n  // Missing Revenue -> reconstruct from Cost + Profit\n  if (revenue === undefined || revenue === null || revenue === '') {\n    if (cost != null && profit != null) {\n      revenue = cost + profit;\n      issues.push('Revenue missing; set to Cost + Profit');\n    } else {\n      revenue = 0;\n      issues.push('Revenue missing and unrecoverable; set to 0');\n    }\n  }\n\n  // Missing Cost -> reconstruct from Revenue - Profit\n  if (cost === undefined || cost === null || cost === '') {\n    if (revenue != null && profit != null) {\n      cost = revenue - profit;\n      issues.push('Cost missing; set to Revenue - Profit');\n    } else {\n      cost = 0;\n      issues.push('Cost missing and unrecoverable; set to 0');\n    }\n  }\n\n  // Missing Profit -> reconstruct from Revenue - Cost\n  if (profit === undefined || profit === null || profit === '') {\n    profit = revenue - cost;\n    issues.push('Profit missing; set to Revenue - Cost');\n  }\n\n  // Negative Units Sold -> take absolute value\n  if (typeof units === 'number' && units < 0) {\n    units = Math.abs(units);\n    issues.push('Units Sold was negative; corrected to absolute value');\n  }\n\n  // Missing Units Sold -> flag, set to 0\n  if (units === undefined || units === null || units === '') {\n    units = 0;\n    issues.push('Units Sold missing; set to 0');\n  }\n\n  // Missing Customer Count -> set to 0 and flag\n  if (customers === undefined || customers === null || customers === '') {\n    customers = 0;\n    issues.push('Customer Count missing; set to 0');\n  }\n\n  // Missing or invalid Date -> flag\n  if (!date || isNaN(new Date(date).getTime())) {\n    issues.push('Date missing or invalid; flagged for manual review');\n  }\n\n  return {\n    ...row,\n    Revenue: revenue,\n    Cost: cost,\n    Profit: profit,\n    'Units Sold': units,\n    'Customer Count': customers,\n    _validation_issues: issues\n  };\n});\n\nconst flagged = validated.filter(r => r._validation_issues.length > 0);\n\nreturn [{\n  json: {\n    data: validated,\n    validation_summary: {\n      total_rows: validated.length,\n      flagged_rows: flagged.length,\n      flagged_details: flagged\n    }\n  }\n}];"
+      },
+      "id": "b0331dfd-7973-4e32-bcfe-919e4c56332c",
+      "name": "Code in JavaScript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -22928,
+        -20192
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a business data analyst. Here is the sales dataset: {{ JSON.stringify($('Code in JavaScript'). item.json.data) }}\n\nAnalyze this data and respond ONLY with valid JSON in exactly this format, no extra text before or after:\n\n{\n\"kpis\": \"short summary of key numbers (total revenue, top product, most active region, etc.)\",\n\"trends\": \"short summary of trend over time\",\n\"anomalies\": \"list of unusual records and why they matter,\"\n\"forecast\": \"next period prediction with confidence level\",\n\"recommendations\": \"2-3 actionable business recommendations\"\n}",
+        "messages": {
+          "messageValues": []
+        },
+        "batching": {}
+      },
+      "id": "5ff88959-10d5-4437-bcf9-05fcf428214e",
+      "name": "Basic LLM Chain",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        -22752,
+        -20080
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {}
+      },
+      "id": "29da2396-355a-4773-bf9e-a3a7c8cd691a",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        -22816,
+        -19840
+      ],
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "8ry3rwUri3xHekrk",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "AI Excel Business Automation",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 96015099,
+          "mode": "list",
+          "cachedResultName": "AI_Chat_Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit#gid=96015099"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $now }}",
+            "User Message": "={{ $ ('When chat message received').item.json.chatInput }}",
+            "AI Response": "={{ $('Basic LLM Chain').item.json.text }}"
+          },
+          "matchingColumns": [
+            "Date"
+          ],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "User Message",
+              "displayName": "User Message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "AI Response",
+              "displayName": "AI Response",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "eab813e1-19c0-4e58-aa85-c287d1956792",
+      "name": "Append or update row in sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -22304,
+        -20272
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "QimWF6zFG78lRwN9",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON. stringify({contents: [{parts: [{text: \"You are a business data analyst. Here is the sales dataset: \" + JSON.stringify($('Aggregate').item.json.data) + \" Answer this question using only this data: Which product has the highest total revenue?\"}]}]}) }}",
+        "options": {}
+      },
+      "id": "d8d2e18e-bde3-48b9-afdd-4f7b80b0996f",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -22336,
+        -19936
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "8ry3rwUri3xHekrk",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "your-email@example.com",
+        "subject": " Workflow Alert - AI Analysis Failed",
+        "message": "The Gemini API call failed after 3 retries. Please check the workflow manually.",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "6b3eacbe-93fb-49c9-9c21-7d270113347b",
+      "name": "Send Failure Alert Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -22080,
+        -19840
+      ],
+      "webhookId": "6b039a49-df48-49ca-84b7-be83f8044345",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "pOwsG6ZHz985tClA",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "AI Excel Business Automation",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1610091990,
+          "mode": "list",
+          "cachedResultName": "Execution logs",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit#gid=1610091990"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Time stamp": "={{ $now }}",
+            "status": "Failed",
+            "step": "AI Analysis",
+            "Message": "Gemini API call failed after retries. Manual check required."
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Time stamp",
+              "displayName": "Time stamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "step",
+              "displayName": "step",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Message",
+              "displayName": "Message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -21824,
+        -19840
+      ],
+      "id": "de7cd000-2045-4e73-b5aa-bdfc0aedd5c4",
+      "name": "Log Failure to Sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "QimWF6zFG78lRwN9",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "your-email@example.com",
+        "subject": "Sales Revenue Report",
+        "message": "={{ $('HTTP Request').item.json.candidates[0].content.parts[0].text }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "46f2bae5-ea8d-47cd-9f47-e96aad0ff326",
+      "name": "Send Success Report Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -22064,
+        -20128
+      ],
+      "webhookId": "a3a0c466-cea3-4f2f-8b96-217f5d91599f",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "pOwsG6ZHz985tClA",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "AI Excel Business Automation",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 264902486,
+          "mode": "list",
+          "cachedResultName": "Dashboard sheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit#gid=264902486"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $now }}",
+            "KPI Summary": "={{ JSON.parse($('Basic LLM Chain').item.json.text). kpis }}",
+            "Trends": "={{ JSON.parse($('Basic LLM Chain').item.json.text).trends }}",
+            "Anomalies": "={{ JSON.parse($('Basic LLM Chain').item.json.text).anomalies }}",
+            "Recommendations": "={{ JSON.parse($('Basic LLM Chain').item.json.text).recommendations }}",
+            "Forecast": "={{ JSON.parse($('Basic LLM Chain').item.json.text).forecast }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "KPI Summary",
+              "displayName": "KPI Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Trends",
+              "displayName": "Trends",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Anomalies",
+              "displayName": "Anomalies",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Recommendations",
+              "displayName": "Recommendations",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Forecast",
+              "displayName": "Forecast",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "0449dccf-6d4a-4452-8803-bbdf0d767c4c",
+      "name": "Log Dashboard Data",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -21808,
+        -20112
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "QimWF6zFG78lRwN9",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "AI Excel Business Automation",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1610091990,
+          "mode": "list",
+          "cachedResultName": "Execution logs",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit#gid=1610091990"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Time stamp": "={{ $now }}",
+            "status": "Success",
+            "step": "Report sent",
+            "Message": "Dashboard report generated and emailed successfully."
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Time stamp",
+              "displayName": "Time stamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "step",
+              "displayName": "step",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Message",
+              "displayName": "Message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -21664,
+        -20336
+      ],
+      "id": "a66c9dce-0d0c-4289-a556-5f75781239d8",
+      "name": "Log Success to Sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "QimWF6zFG78lRwN9",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "When chat message received": [
+      {
+        "json": {
+          "action": "sendMessage",
+          "sessionId": "135651718f4748c9b2bf458793c8cc95",
+          "chatInput": "What is the total revenue?"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Append or update row in sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Send Success Report Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Failure Alert Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Failure Alert Email": {
+      "main": [
+        [
+          {
+            "node": "Log Failure to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Success Report Email": {
+      "main": [
+        [
+          {
+            "node": "Log Dashboard Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Dashboard Data": {
+      "main": [
+        [
+          {
+            "node": "Log Success to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "4789ad02-969e-4808-aab8-0aa5862a51f9",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ab40c8b1b6b6e833a2b63af1c570de4baacd8cfed82a6b548bd3b19f9b7b6fb8"
+  },
+  "nodeGroups": [],
+  "id": "k8B9tlQ4U5WdvMkH",
+  "tags": []
+}
